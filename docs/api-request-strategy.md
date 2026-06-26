@@ -1,40 +1,100 @@
 # API Request Strategy & Provider Mapping
 
-This document specifies which third-party data providers are mapped to each specific metric, preventing paid paywalls and avoiding API rate limits.
+This document describes the current provider usage strategy for the raw-data-first backend.
 
----
+## 1. Provider Roles
 
-## 1. Data Mapping Matrix
+### Yahoo Finance
+Primary v1 provider for:
+- company profile
+- quote and 52-week range
+- raw income statements
+- raw balance sheets
+- raw cash flow statements
+- supplemental vendor fields such as `forward_pe`, `pe_ratio`, `ps_ratio`, `peg_ratio`
+- analyst target prices from `info`
 
-| Capability Category | Target Metric | Primary Provider | Method |
-| :--- | :--- | :--- | :--- |
-| **Market Data** | Close Price | **Yahoo Finance** | Native Scraper (`yf.Ticker(t).info`) |
-| | Volume | **Yahoo Finance** | Native Scraper (`yf.Ticker(t).info`) |
-| | 52-Week High | **Yahoo Finance** | Native Scraper (`yf.Ticker(t).info`) |
-| | 52-Week Low | **Yahoo Finance** | Native Scraper (`yf.Ticker(t).info`) |
-| | Drawdown % | **Calculated** | Mathematical extraction in Yahoo Provider |
-| **Company Profile** | Company Name | **Yahoo Finance** | Native Scraper (`yf.Ticker(t).info`) |
-| | Sector & Industry | **Yahoo Finance** | Native Scraper (`yf.Ticker(t).info`) |
-| | Exchange & Country | **Yahoo Finance** | Native Scraper (`yf.Ticker(t).info`) |
-| | Market Cap | **Yahoo Finance** | Native Scraper (`yf.Ticker(t).info`) |
-| **Financial Metrics** | Forward & Trailing PE| **Yahoo Finance** | Native Scraper (`yf.Ticker(t).info`) |
-| | Price-to-Sales (PS) | **Yahoo Finance** | Native Scraper (`yf.Ticker(t).info`) |
-| | PEG Ratio | **Yahoo Finance** | Native Scraper (`yf.Ticker(t).info`) |
-| | Return on Equity (ROE) | **Yahoo Finance** | Native Scraper (`yf.Ticker(t).info`) |
-| | Margins (Gross, Net, Op)| **Yahoo Finance** | Native Scraper (`yf.Ticker(t).info`) |
-| | Debt-to-Equity (D/E) | **Yahoo Finance** | Native Scraper (`yf.Ticker(t).info`) |
-| | Current Ratio | **Yahoo Finance** | Native Scraper (`yf.Ticker(t).info`) |
-| | EBIT Growth | **Yahoo Finance / Calculated**| Derived on-the-fly from raw financials |
-| | ROIC | **Yahoo Finance / Calculated**| Derived on-the-fly from raw balance sheet |
-| **Analyst Estimates** | Analyst Price Targets | **Yahoo Finance** | Native Scraper (`yf.Ticker(t).info`) |
-| | Recommendation Trends| **Finnhub** | REST API (`/stock/recommendation`) |
+Yahoo is the primary statement source in v1, but normalized metrics should still be calculated internally after raw ingestion.
 
----
+### Finnhub
+Used for:
+- analyst recommendation trends
 
-## 2. API Quota Conservation Rules
+Finnhub is not the primary source for financial statements or valuation metrics.
 
-1.  **Yahoo Finance (`yfinance`):** Has no hard daily call quotas. However, to prevent IP address rate blocks, we enforce a strict `asyncio.sleep(1.0)` delay inside our loops.
-2.  **Finnhub:** Key is restricted to **60 requests per minute**.
-    *   Our scheduler only calls Finnhub during the weekly weekend jobs to update recommendations.
-    *   We bypass `/stock/price-target` on Finnhub entirely because they locked it on their free tier, saving API quota.
-3.  **FMP (Financial Modeling Prep):** FMP is **completely disabled** as of Phase 3 because FMP blocks free tier accounts on all legacy profile, metric, and financials endpoints. Do not add FMP integrations without a premium billing upgrade.
+### SEC EDGAR
+Used for:
+- ticker to CIK mapping
+- company facts skeleton
+- future enrichment and fallback paths
+
+SEC is additive in v1, not the default source of normalized statements.
+
+### FRED
+Used for:
+- treasury yield
+- federal funds rate
+- CPI / inflation series
+- unemployment rate
+
+## 2. Data Mapping by Layer
+
+### Raw Layer
+- store provider payloads in `raw_api_responses`
+- store raw statement rows in `raw_financial_statements`
+
+### Normalization Layer
+- Yahoo raw statements are mapped into:
+  - `normalized_income_statements`
+  - `normalized_balance_sheets`
+  - `normalized_cash_flow_statements`
+
+### Metrics Layer
+Calculated internally from normalized statements:
+- FCF
+- ROIC
+- ROE
+- ROCE
+- CROIC
+- margins
+- growth rates and CAGR metrics
+- debt and liquidity ratios
+- valuation yields and EV multiples
+- share dilution
+
+### Valuation Layer
+Calculated internally:
+- DCF
+- owner earnings value
+- margin of safety
+
+Placeholder only in v1:
+- reverse DCF
+- EPV
+
+### Scoring Layer
+Calculated internally:
+- quality
+- valuation
+- trend
+- risk
+- analyst
+- margin of safety
+- opportunity
+
+## 3. Quota and Safety Rules
+- Do not fetch all provider data from request/response endpoints unless the route is explicitly a refresh path.
+- Prefer scheduled jobs and refresh endpoints for provider access.
+- SEC requests must include `SEC_USER_AGENT`.
+- Use provider throttling and quota accounting through the existing service/provider stack.
+- Do not reintroduce paid-provider assumptions into the default architecture.
+
+## 4. Practical Rule for New Features
+When adding a new investing metric:
+1. fetch or reuse raw provider data
+2. persist raw data if it is new
+3. normalize into internal shape if statement-driven
+4. calculate the metric internally
+5. expose it via repositories, services, and APIs as needed
+
+Do not skip directly from provider payload to score logic unless the field is explicitly supplemental.

@@ -29,7 +29,7 @@ const App: React.FC = () => {
           <Watchlist />
         )}
         {currentView === 'screener' && (
-          <Screener />
+          <Screener onNavigateToStock={handleNavigateToStock} />
         )}
         {currentView === 'detail' && (
           <StockDetail selectedTicker={selectedTicker} />
@@ -55,3 +55,4 @@ const App: React.FC = () => {
 };
 
 export default App;
+

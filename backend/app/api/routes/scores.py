@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List
 from datetime import date
 from app.core.database import get_db
 from app.models.stock_score import StockScore
@@ -22,22 +22,30 @@ class ScoreSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 # --- Routes ---
+def _latest_score_subquery(db: Session):
+    return db.query(
+        StockScore.ticker,
+        StockScore.snapshot_date,
+        StockScore.score_version,
+    ).order_by(
+        StockScore.ticker,
+        StockScore.snapshot_date.desc(),
+        StockScore.score_version.desc(),
+    ).distinct(StockScore.ticker).subquery()
 
 @router.get("/latest", response_model=List[ScoreSchema])
 def get_latest_scores(db: Session = Depends(get_db)):
     """
     Retrieve the absolute latest scores for all active tickers.
-    Uses PostgreSQL subquery to select only the newest snapshot_date for each ticker.
+    Prefer the newest snapshot and newest score version per ticker.
     """
-    subquery = db.query(
-        StockScore.ticker,
-        StockScore.snapshot_date
-    ).order_by(StockScore.ticker, StockScore.snapshot_date.desc()).distinct(StockScore.ticker).subquery()
+    subquery = _latest_score_subquery(db)
 
     scores = db.query(StockScore).join(
         subquery,
         (StockScore.ticker == subquery.c.ticker) & 
-        (StockScore.snapshot_date == subquery.c.snapshot_date)
+        (StockScore.snapshot_date == subquery.c.snapshot_date) &
+        (StockScore.score_version == subquery.c.score_version)
     ).all()
     
     return scores
@@ -45,15 +53,13 @@ def get_latest_scores(db: Session = Depends(get_db)):
 @router.get("/top", response_model=List[ScoreSchema])
 def get_top_opportunities(limit: int = 20, db: Session = Depends(get_db)):
     """Retrieve the top opportunities ranked by their latest opportunity score."""
-    subquery = db.query(
-        StockScore.ticker,
-        StockScore.snapshot_date
-    ).order_by(StockScore.ticker, StockScore.snapshot_date.desc()).distinct(StockScore.ticker).subquery()
+    subquery = _latest_score_subquery(db)
 
     scores = db.query(StockScore).join(
         subquery,
         (StockScore.ticker == subquery.c.ticker) & 
-        (StockScore.snapshot_date == subquery.c.snapshot_date)
+        (StockScore.snapshot_date == subquery.c.snapshot_date) &
+        (StockScore.score_version == subquery.c.score_version)
     ).order_by(StockScore.opportunity_score.desc()).limit(limit).all()
     
     return scores

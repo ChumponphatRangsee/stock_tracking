@@ -4,8 +4,10 @@ from app.models.api_usage_log import ApiUsageLog
 
 # Free Tier Limits
 PROVIDER_LIMITS = {
-    "FMP": 250,      # FMP allows ~250 requests per day on free tier
-    "Finnhub": 300   # Finnhub allows 60/min, but we cap daily to be safe
+    "FMP": 250,
+    "Finnhub": 300,
+    "SEC": 600,
+    "FRED": 300,
 }
 
 class QuotaService:

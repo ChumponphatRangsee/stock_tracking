@@ -4,7 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.core.config import settings
-from app.api.routes import stocks, scores, sectors, watchlists, refresh
+from app.api.routes import metrics, refresh, scores, sectors, statements, stocks, valuation, watchlists, alerts
+from app.jobs.scheduler import setup_scheduler
 
 scheduler = BackgroundScheduler()
 
@@ -12,6 +13,7 @@ scheduler = BackgroundScheduler()
 async def lifespan(app: FastAPI):
     # Startup logic: Start the scheduler
     print("Starting APScheduler...")
+    setup_scheduler(scheduler)
     scheduler.start()
     
     yield
@@ -34,10 +36,15 @@ app.add_middleware(
 # Include Routers
 app.include_router(stocks.router, prefix="/api/stocks", tags=["Stocks"])
 app.include_router(scores.router, prefix="/api/scores", tags=["Scores"])
+app.include_router(metrics.router, prefix="/api/metrics", tags=["Metrics"])
+app.include_router(valuation.router, prefix="/api/valuation", tags=["Valuation"])
+app.include_router(statements.router, prefix="/api/statements", tags=["Statements"])
 app.include_router(sectors.router, prefix="/api/sectors", tags=["Sectors"])
 app.include_router(watchlists.router, prefix="/api/watchlist", tags=["Watchlist"])
 app.include_router(refresh.router, prefix="/api/refresh", tags=["Refresh"])
+app.include_router(alerts.router, prefix="/api/alerts", tags=["Alerts"])
 
 @app.get("/")
 def read_root():
     return {"message": f"Welcome to the {settings.PROJECT_NAME}"}
+

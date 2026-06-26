@@ -12,6 +12,9 @@ class StockScore(Base):
     valuation_score = Column(Numeric)
     discount_score = Column(Numeric)
     analyst_score = Column(Numeric)
+    trend_score = Column(Numeric)
+    risk_score = Column(Numeric)
+    margin_of_safety_score = Column(Numeric)
     opportunity_score = Column(Numeric, index=True)
     
     created_at = Column(DateTime, server_default=func.now())

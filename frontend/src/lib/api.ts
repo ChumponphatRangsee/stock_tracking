@@ -18,6 +18,16 @@ export const api = {
   // Sectors
   getSectorRankings: () => client.get('/sectors/ranking').then(res => res.data),
   
+  // Statements & Valuations
+  getStatements: (ticker: string, periodType = 'annual') => client.get(`/statements/${ticker}`, { params: { period_type: periodType } }).then(res => res.data),
+  getValuations: (ticker: string) => client.get(`/valuation/${ticker}`).then(res => res.data),
+
+  // Alerts
+  getAlerts: () => client.get('/alerts/').then(res => res.data),
+  createAlert: (alert: { ticker: string, metric: string, condition: string, value_threshold: number }) => client.post('/alerts/', alert).then(res => res.data),
+  toggleAlert: (id: number) => client.patch(`/alerts/${id}/toggle`).then(res => res.data),
+  deleteAlert: (id: number) => client.delete(`/alerts/${id}`).then(res => res.data),
+  
   // Watchlist
   getWatchlist: () => client.get('/watchlist/').then(res => res.data),
   addToWatchlist: (ticker: string, note?: string) => client.post('/watchlist/', { ticker, note }).then(res => res.data),
@@ -26,3 +36,4 @@ export const api = {
   // Manual trigger
   triggerRefresh: (ticker: string) => client.post(`/refresh/${ticker}`).then(res => res.data)
 };
+

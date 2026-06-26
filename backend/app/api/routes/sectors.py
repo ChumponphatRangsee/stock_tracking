@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from typing import List, Optional
+from typing import List
 from app.core.database import get_db
 from app.models.stock import Stock
 from app.models.stock_score import StockScore
@@ -26,8 +26,13 @@ def get_sector_rankings(db: Session = Depends(get_db)):
     # 1. Subquery to find the latest score date for each ticker
     subquery = db.query(
         StockScore.ticker,
-        StockScore.snapshot_date
-    ).order_by(StockScore.ticker, StockScore.snapshot_date.desc()).distinct(StockScore.ticker).subquery()
+        StockScore.snapshot_date,
+        StockScore.score_version,
+    ).order_by(
+        StockScore.ticker,
+        StockScore.snapshot_date.desc(),
+        StockScore.score_version.desc(),
+    ).distinct(StockScore.ticker).subquery()
 
     # 2. Join Stock, StockScore, and the subquery to compute the aggregate averages
     rankings = db.query(
@@ -39,7 +44,8 @@ def get_sector_rankings(db: Session = Depends(get_db)):
     ).join(
         subquery,
         (StockScore.ticker == subquery.c.ticker) & 
-        (StockScore.snapshot_date == subquery.c.snapshot_date)
+        (StockScore.snapshot_date == subquery.c.snapshot_date) &
+        (StockScore.score_version == subquery.c.score_version)
     ).filter(
         Stock.sector != None
     ).group_by(

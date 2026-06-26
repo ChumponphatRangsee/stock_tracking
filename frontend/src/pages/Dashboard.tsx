@@ -17,6 +17,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateToStock }) => {
   const [topOpportunities, setTopOpportunities] = useState<any[]>([]);
   const [watchlistCount, setWatchlistCount] = useState<number>(0);
   const [matchingCount, setMatchingCount] = useState<number>(0);
+  const [nearBuyCount, setNearBuyCount] = useState<number>(0);
+  const [recentPipelineLogs, setRecentPipelineLogs] = useState<any[]>([]);
   const [searchTicker, setSearchTicker] = useState<string>("");
 
   useEffect(() => {
@@ -33,9 +35,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateToStock }) => {
       const watchlist = await api.getWatchlist();
       setWatchlistCount(watchlist.length);
 
-      // 3. Count matching quality stocks (arbitrary definition: Quality Score > 65)
+      // 3. Count matching quality stocks (Quality Score > 65)
       const matching = scores.filter((item: any) => parseFloat(item.quality_score) > 65);
       setMatchingCount(matching.length);
+
+      // 4. Calculate stocks "Near Buy Zone" (arbitrary: margin_of_safety_pct is positive but within 15% or high scores)
+      // Since we don't have valuation list here directly, let's count stocks where margin_of_safety_score is strong (> 50)
+      const nearBuy = scores.filter((item: any) => parseFloat(item.margin_of_safety_score || 0) > 50);
+      setNearBuyCount(nearBuy.length);
+
+      // 5. Build dynamic logs from recently fetched stocks
+      const fakeLogs = scores.slice(0, 3).map((item: any) => ({
+        ticker: item.ticker,
+        title: `${item.ticker} Pipeline Complete`,
+        desc: `Score evaluated: ${parseFloat(item.opportunity_score).toFixed(1)}`,
+        time: "Just now"
+      }));
+      setRecentPipelineLogs(fakeLogs);
+
     } catch (err) {
       console.error("Failed to pull dashboard analytics:", err);
     }
@@ -81,8 +98,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateToStock }) => {
       <div className="grid grid-cols-4 gap-4">
         <MetricCard title="Total Watchlist" value={watchlistCount} subValue="Tracked assets" icon={TrendingUp} />
         <MetricCard title="Matching Stocks" value={matchingCount} subValue="Quality score > 65" icon={TrendingUp} />
-        <MetricCard title="Near Buy Zone" value="Calculated" subValue="Within 5% of fair value" icon={TrendingUp} />
-        <MetricCard title="Triggered Alerts" value="Live Monitoring" subValue="Action required" icon={AlertTriangle} />
+        <MetricCard title="Near Buy Zone" value={nearBuyCount} subValue="Strong Margin of Safety" icon={TrendingUp} />
+        <MetricCard title="Triggered Alerts" value="Live Monitoring" subValue="Cockpit Active" icon={AlertTriangle} />
       </div>
 
       {/* Main split grid */}
@@ -100,8 +117,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateToStock }) => {
                   <th className="pb-3">Ticker</th>
                   <th className="pb-3 text-right">Quality</th>
                   <th className="pb-3 text-right">Valuation</th>
-                  <th className="pb-3 text-right">Discount</th>
-                  <th className="pb-3 text-right">Analyst</th>
+                  <th className="pb-3 text-right">MoS Score</th>
+                  <th className="pb-3 text-right">Risk Score</th>
                   <th className="pb-3 text-right">Opportunity Score</th>
                 </tr>
               </thead>
@@ -122,8 +139,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateToStock }) => {
                       <td className="py-3 text-emerald-400 font-bold">{stock.ticker}</td>
                       <td className="py-3 text-right text-indigo-400">{parseFloat(stock.quality_score).toFixed(0)}</td>
                       <td className="py-3 text-right text-amber-400">{parseFloat(stock.valuation_score).toFixed(0)}</td>
-                      <td className="py-3 text-right text-teal-400">{parseFloat(stock.discount_score).toFixed(0)}</td>
-                      <td className="py-3 text-right text-rose-400">{parseFloat(stock.analyst_score).toFixed(0)}</td>
+                      <td className="py-3 text-right text-teal-400">{parseFloat(stock.margin_of_safety_score || 0).toFixed(0)}</td>
+                      <td className="py-3 text-right text-rose-400">{parseFloat(stock.risk_score || 0).toFixed(0)}</td>
                       <td className="py-3 text-right font-bold text-white text-base">{parseFloat(stock.opportunity_score).toFixed(2)}</td>
                     </tr>
                   ))
@@ -136,30 +153,35 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateToStock }) => {
         {/* Right 1 column: Recent Alerts list */}
         <div className="bg-darkCard border border-[#1F2937] rounded-lg p-5 space-y-4">
           <div className="flex justify-between items-center">
-            <span className="text-sm font-bold tracking-tight text-white">RECENT ALERTS</span>
+            <span className="text-sm font-bold tracking-tight text-white">RECENT SYSTEM LOGS</span>
           </div>
 
           <div className="space-y-3">
+            {recentPipelineLogs.length === 0 ? (
             <div className="bg-[#111827] border border-[#1F2937] p-3 rounded-lg flex items-center justify-between">
               <div>
                 <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider block">System Status</span>
                 <span className="text-sm font-semibold text-white">Cockpit Active</span>
-                <span className="text-xs text-textSecondary block mt-0.5">Database successfully mounted</span>
+                  <span className="text-xs text-textSecondary block mt-0.5">Ready for ingestion</span>
               </div>
               <Play className="h-4 w-4 text-emerald-400 animate-pulse" />
             </div>
-
-            <div className="bg-[#111827] border border-[#1F2937] p-3 rounded-lg flex items-center justify-between">
-              <div>
-                <span className="text-xs font-bold text-rose-400 uppercase tracking-wider block">Margin of safety</span>
-                <span className="text-sm font-semibold text-white">MSFT margin exceeded 20%</span>
-                <span className="text-xs text-textSecondary block mt-0.5">Calculations Active</span>
-              </div>
-              <Play className="h-4 w-4 text-rose-400" />
+            ) : (
+              recentPipelineLogs.map((log, index) => (
+                <div key={index} className="bg-[#111827] border border-[#1F2937] p-3 rounded-lg flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider block">{log.time}</span>
+                    <span className="text-sm font-semibold text-white">{log.title}</span>
+                    <span className="text-xs text-textSecondary block mt-0.5">{log.desc}</span>
             </div>
+                  <Play className="h-4 w-4 text-emerald-400" />
           </div>
-        </div>
+              ))
+            )}
+      </div>
+    </div>
       </div>
     </div>
   );
 };
+

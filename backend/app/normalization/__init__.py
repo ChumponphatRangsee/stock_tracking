@@ -1,0 +1,2 @@
+from app.normalization.statement_normalizer import StatementNormalizer
+

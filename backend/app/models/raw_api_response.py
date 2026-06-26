@@ -9,8 +9,8 @@ class RawApiResponse(Base):
     provider = Column(String, nullable=False)
     endpoint = Column(String, nullable=False)
     ticker = Column(String)
-    
-    response_hash = Column(String)
-    response_json = Column(JSONB)
-    
+    data_type = Column(String, nullable=False, default="generic")
+    raw_json = Column(JSONB)
+    data_hash = Column(String)
+    fetched_at = Column(DateTime, server_default=func.now(), nullable=False)
     created_at = Column(DateTime, server_default=func.now())

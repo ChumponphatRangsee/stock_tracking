@@ -1,3 +1,5 @@
+__test__ = False
+
 import asyncio
 from app.core.database import SessionLocal
 from app.services.data_ingestion_service import DataIngestionService

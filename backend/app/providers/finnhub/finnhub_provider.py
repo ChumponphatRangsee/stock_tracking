@@ -21,7 +21,12 @@ class FinnhubProvider(AnalystDataProvider):
         recs_url = f"{self.base_url}/stock/recommendation?symbol={ticker}&token={settings.FINNHUB_API_KEY}"
         
         try:
-            raw_recs = await self.api_manager.execute_request(self.provider, ticker, recs_url)
+            raw_recs = await self.api_manager.execute_request(
+                self.provider,
+                ticker,
+                recs_url,
+                data_type="analyst_recommendations",
+            )
             
             normalized = {
                 "strong_buy": 0, "buy": 0, "hold": 0, "sell": 0, "strong_sell": 0

@@ -1,173 +1,183 @@
 # Database Schema & Snapshot Strategy Documentation
 
-This document outlines the database architecture, table definitions, relationships, and indexing designed specifically for the **Historical Snapshot Schema**.
+This document summarizes the current snapshot-oriented schema after the raw-data-first value-investing refactor.
 
----
+## 1. Snapshot Strategy
+- Prices, analyst data, metrics, valuations, macro indicators, raw responses, raw statements, and normalized statements are historical snapshots.
+- Historical data should be appended, not replaced.
+- Score rows may be recalculated for the same `ticker + snapshot_date + score_version`, but the intent remains historical traceability.
 
-## 1. ER Diagram Summary
+## 2. Core Tables
 
-All key tables are designed for time-series snapshot storage using composite primary keys combining `ticker` and a date field (`snapshot_date` or `price_date`). 
+### A. Security Registry
+- `stocks`
+- `watchlists`
+
+### B. Market and Analyst Snapshots
+- `stock_prices`
+- `analyst_data`
+- `stock_scores`
+
+### C. Raw Storage
+- `raw_api_responses`
+- `raw_financial_statements`
+
+### D. Normalized Statements
+- `normalized_income_statements`
+- `normalized_balance_sheets`
+- `normalized_cash_flow_statements`
+
+### E. Internal Calculation Outputs
+- `financial_metrics`
+- `intrinsic_values`
+- `macro_indicators`
+
+### F. Operational Tables
+- `api_request_queue`
+- `api_usage_logs`
+
+## 3. Important Table Shapes
+
+### `raw_api_responses`
+- `id`
+- `provider`
+- `endpoint`
+- `ticker`
+- `data_type`
+- `raw_json`
+- `data_hash`
+- `fetched_at`
+- `created_at`
+
+### `raw_financial_statements`
+- `id`
+- `ticker`
+- `provider`
+- `statement_type`
+- `fiscal_year`
+- `fiscal_quarter`
+- `period_end_date`
+- `raw_json`
+- `accession_number`
+- `created_at`
+
+### `normalized_income_statements`
+Primary key:
+- `ticker`
+- `period_end_date`
+- `period_type`
+
+Important fields:
+- `fiscal_year`
+- `fiscal_quarter`
+- `revenue`
+- `gross_profit`
+- `operating_income`
+- `ebit`
+- `net_income`
+- `eps_basic`
+- `eps_diluted`
+- `shares_basic`
+- `shares_diluted`
+
+### `normalized_balance_sheets`
+Primary key:
+- `ticker`
+- `period_end_date`
+- `period_type`
+
+Important fields:
+- `cash_and_equivalents`
+- `current_assets`
+- `total_assets`
+- `current_liabilities`
+- `total_liabilities`
+- `total_debt`
+- `total_equity`
+- `invested_capital`
+
+### `normalized_cash_flow_statements`
+Primary key:
+- `ticker`
+- `period_end_date`
+- `period_type`
+
+Important fields:
+- `operating_cash_flow`
+- `capital_expenditure`
+- `free_cash_flow`
+- `dividends_paid`
+- `share_buybacks`
+
+### `financial_metrics`
+Primary key:
+- `ticker`
+- `snapshot_date`
+
+Important fields include:
+- vendor supplemental: `forward_pe`, `pe_ratio`, `ps_ratio`, `peg_ratio`
+- growth: `revenue_growth_1y`, `revenue_growth_3y_cagr`, `ebit_growth_3y_cagr`, `fcf_growth_3y_cagr`
+- profitability: `gross_margin`, `operating_margin`, `net_margin`, `fcf_margin`
+- returns: `roe`, `roic`, `roce`, `croic`
+- balance sheet: `debt_to_equity`, `net_debt_to_ebit`, `current_ratio`
+- valuation metrics: `fcf_yield`, `earnings_yield`, `ev_ebit`, `ev_fcf`, `buyback_yield`
+- capital structure: `share_dilution_pct`
+
+### `intrinsic_values`
+- `id`
+- `ticker`
+- `valuation_date`
+- `method`
+- `base_case_value`
+- `bear_case_value`
+- `bull_case_value`
+- `assumptions_json`
+- `margin_of_safety_pct`
+- `created_at`
+
+### `macro_indicators`
+- `id`
+- `indicator_name`
+- `observation_date`
+- `value`
+- `source`
+- `metadata_json`
+- `created_at`
+
+### `stock_scores`
+Primary key:
+- `ticker`
+- `snapshot_date`
+- `score_version`
+
+Important fields:
+- `quality_score`
+- `valuation_score`
+- `discount_score`
+- `analyst_score`
+- `trend_score`
+- `risk_score`
+- `margin_of_safety_score`
+- `opportunity_score`
+
+## 4. Key Relationships
 
 ```text
-  [stocks] (1) 
-     │
-     ├───> [stock_prices]       (M) (PK: ticker, price_date)
-     ├───> [financial_metrics]  (M) (PK: ticker, snapshot_date)
-     ├───> [analyst_data]       (M) (PK: ticker, snapshot_date)
-     ├───> [stock_scores]       (M) (PK: ticker, snapshot_date, score_version)
-     └───> [watchlists]         (M) (PK: id, FK: ticker)
+[stocks]
+  ├── [stock_prices]
+  ├── [analyst_data]
+  ├── [financial_metrics]
+  ├── [intrinsic_values]
+  ├── [stock_scores]
+  ├── [raw_financial_statements]
+  ├── [normalized_income_statements]
+  ├── [normalized_balance_sheets]
+  └── [normalized_cash_flow_statements]
 ```
 
----
+`raw_api_responses` may reference a ticker, but it is primarily an audit/cache table and not a normalized financial relation.
 
-## 2. Table Definitions (SQL)
-
-The following tables have been initialized in Supabase PostgreSQL:
-
-```sql
--- 1. Stocks Table (The Core Registry)
-CREATE TABLE stocks (
-    ticker VARCHAR PRIMARY KEY,
-    company_name VARCHAR NOT NULL,
-    sector VARCHAR,
-    industry VARCHAR,
-    exchange VARCHAR,
-    country VARCHAR,
-    market_cap BIGINT,
-    is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
-);
-
--- 2. Stock Prices (Daily Market Quotes)
-CREATE TABLE stock_prices (
-    ticker VARCHAR REFERENCES stocks(ticker),
-    price_date DATE NOT NULL,
-    close_price NUMERIC,
-    open_price NUMERIC,
-    high_price NUMERIC,
-    low_price NUMERIC,
-    volume BIGINT,
-    high_52w NUMERIC,
-    low_52w NUMERIC,
-    below_52w_high_pct NUMERIC,
-    created_at TIMESTAMP DEFAULT NOW(),
-    PRIMARY KEY (ticker, price_date)
-);
-
--- 3. Financial Metrics (Fundamental Balance Sheet & Margins Snapshot)
-CREATE TABLE financial_metrics (
-    ticker VARCHAR REFERENCES stocks(ticker),
-    snapshot_date DATE NOT NULL,
-    forward_pe NUMERIC,
-    pe_ratio NUMERIC,
-    ps_ratio NUMERIC,
-    peg_ratio NUMERIC,
-    revenue_growth NUMERIC,
-    eps_growth NUMERIC,
-    ebit_growth NUMERIC,
-    roe NUMERIC,
-    roic NUMERIC,
-    ebit_margin NUMERIC,
-    gross_margin NUMERIC,
-    net_margin NUMERIC,
-    debt_equity NUMERIC,
-    current_ratio NUMERIC,
-    source VARCHAR DEFAULT 'Yahoo',
-    created_at TIMESTAMP DEFAULT NOW(),
-    PRIMARY KEY (ticker, snapshot_date)
-);
-
--- 4. Analyst Data (Wall Street targets and Consensus)
-CREATE TABLE analyst_data (
-    ticker VARCHAR REFERENCES stocks(ticker),
-    snapshot_date DATE NOT NULL,
-    target_price_avg NUMERIC,
-    target_price_high NUMERIC,
-    target_price_low NUMERIC,
-    target_upside_pct NUMERIC,
-    strong_buy INT DEFAULT 0,
-    buy INT DEFAULT 0,
-    hold INT DEFAULT 0,
-    sell INT DEFAULT 0,
-    strong_sell INT DEFAULT 0,
-    consensus_rating VARCHAR,
-    source VARCHAR DEFAULT 'Finnhub/Yahoo',
-    created_at TIMESTAMP DEFAULT NOW(),
-    PRIMARY KEY (ticker, snapshot_date)
-);
-
--- 5. Stock Scores (The calculated Opportunity Rankings)
-CREATE TABLE stock_scores (
-    ticker VARCHAR REFERENCES stocks(ticker),
-    snapshot_date DATE NOT NULL,
-    score_version VARCHAR DEFAULT 'v1',
-    quality_score NUMERIC,
-    valuation_score NUMERIC,
-    discount_score NUMERIC,
-    analyst_score NUMERIC,
-    opportunity_score NUMERIC,
-    created_at TIMESTAMP DEFAULT NOW(),
-    PRIMARY KEY (ticker, snapshot_date, score_version)
-);
-
--- 6. Watchlists
-CREATE TABLE watchlists (
-    id SERIAL PRIMARY KEY,
-    ticker VARCHAR REFERENCES stocks(ticker),
-    note TEXT,
-    created_at TIMESTAMP DEFAULT NOW()
-);
-
--- 7. API Request Queue (APScheduler task management)
-CREATE TABLE api_request_queue (
-    id SERIAL PRIMARY KEY,
-    provider VARCHAR NOT NULL,
-    endpoint VARCHAR NOT NULL,
-    ticker VARCHAR,
-    priority INT DEFAULT 100,
-    status VARCHAR DEFAULT 'PENDING',
-    retry_count INT DEFAULT 0,
-    execute_after TIMESTAMP DEFAULT NOW(),
-    error_message TEXT,
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
-);
-
--- 8. API Usage Logs (Quota Enforcement)
-CREATE TABLE api_usage_logs (
-    provider VARCHAR NOT NULL,
-    usage_date DATE NOT NULL,
-    request_count INT DEFAULT 0,
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW(),
-    PRIMARY KEY (provider, usage_date)
-);
-
--- 9. Raw API Responses (Cache check and Delta Delta audits)
-CREATE TABLE raw_api_responses (
-    id SERIAL PRIMARY KEY,
-    provider VARCHAR NOT NULL,
-    endpoint VARCHAR NOT NULL,
-    ticker VARCHAR,
-    response_hash VARCHAR,
-    response_json JSONB,
-    created_at TIMESTAMP DEFAULT NOW()
-);
-```
-
----
-
-## 3. Database Indexes
-
-These indexes have been optimized to allow lightning-fast queries when filtering the Screener on the React UI, or joining historical scores for charts:
-
-```sql
-CREATE INDEX idx_stock_prices_ticker_date ON stock_prices(ticker, price_date DESC);
-CREATE INDEX idx_financial_metrics_ticker_date ON financial_metrics(ticker, snapshot_date DESC);
-CREATE INDEX idx_analyst_data_ticker_date ON analyst_data(ticker, snapshot_date DESC);
-CREATE INDEX idx_stock_scores_ticker_date ON stock_scores(ticker, snapshot_date DESC);
-CREATE INDEX idx_stock_scores_opportunity ON stock_scores(opportunity_score DESC);
-CREATE INDEX idx_api_request_queue_status_priority ON api_request_queue(status, priority, execute_after);
-CREATE INDEX idx_stocks_sector ON stocks(sector);
-```
+## 5. Migration Notes
+- The repository now includes Alembic for schema upgrades.
+- Existing deployments should be migrated via Alembic, not by relying only on `Base.metadata.create_all`.
+- `create_tables.py` remains useful for blank local environments.

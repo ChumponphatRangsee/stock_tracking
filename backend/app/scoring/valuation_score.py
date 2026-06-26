@@ -1,44 +1,36 @@
 def calculate_valuation_score(
-    forward_pe: float, 
-    pe_ratio: float, 
-    ps_ratio: float, 
-    peg_ratio: float
+    fcf_yield: float,
+    earnings_yield: float,
+    ev_ebit: float,
+    ev_fcf: float,
 ) -> float:
     """
-    Valuation Score (out of 100).
-    Rewards companies trading at cheaper, reasonable earnings and sales multiples.
-    Negative or zero multiples are treated as unprofitable/unstable and receive 0.
+    Valuation score from internally calculated yields and enterprise value multiples.
     """
     score = 0.0
     
-    # We prioritize Forward P/E (forward expectations) over Trailing P/E
-    pe_to_use = forward_pe if forward_pe is not None else pe_ratio
-    
-    # 1. Price-to-Earnings (P/E) Multiple - up to 45 points
-    if pe_to_use is not None and pe_to_use > 0:
-        if pe_to_use < 12.0: score += 45
-        elif pe_to_use < 18.0: score += 35
-        elif pe_to_use < 25.0: score += 25
-        elif pe_to_use < 32.0: score += 15
-        elif pe_to_use < 40.0: score += 5
+    if fcf_yield is not None:
+        if fcf_yield >= 0.08: score += 30
+        elif fcf_yield >= 0.05: score += 22
+        elif fcf_yield >= 0.03: score += 15
+        elif fcf_yield > 0.0: score += 8
 
-    # 2. PEG Ratio (P/E relative to growth) - up to 35 points
-    # A PEG under 1.0 is considered the holy grail of valuation (undervalued relative to growth)
-    if peg_ratio is not None and peg_ratio > 0:
-        if peg_ratio <= 1.0: score += 35
-        elif peg_ratio <= 1.5: score += 25
-        elif peg_ratio <= 2.0: score += 15
-        elif peg_ratio <= 3.0: score += 5
-    else:
-        # If PEG is missing, allocate points back to P/E or use default
-        if pe_to_use is not None and pe_to_use < 20.0:
-            score += 15
+    if earnings_yield is not None:
+        if earnings_yield >= 0.08: score += 25
+        elif earnings_yield >= 0.05: score += 20
+        elif earnings_yield >= 0.03: score += 12
+        elif earnings_yield > 0.0: score += 6
 
-    # 3. Price-to-Sales (P/S) Multiple - up to 20 points
-    if ps_ratio is not None and ps_ratio > 0:
-        if ps_ratio < 1.5: score += 20
-        elif ps_ratio < 3.0: score += 15
-        elif ps_ratio < 5.0: score += 10
-        elif ps_ratio < 8.0: score += 5
+    if ev_ebit is not None and ev_ebit > 0:
+        if ev_ebit <= 8: score += 25
+        elif ev_ebit <= 12: score += 20
+        elif ev_ebit <= 16: score += 14
+        elif ev_ebit <= 22: score += 8
+
+    if ev_fcf is not None and ev_fcf > 0:
+        if ev_fcf <= 10: score += 20
+        elif ev_fcf <= 15: score += 15
+        elif ev_fcf <= 20: score += 10
+        elif ev_fcf <= 30: score += 5
 
     return min(score, 100.0)
